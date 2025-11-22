@@ -22,6 +22,7 @@ dirs = "5.0"
 chrono = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+lazy_static = "1.4"
 # For entropy calculation, we can implement it ourselves or use a small crate if needed.
 # We'll implement a simple Shannon entropy calculator in the sentinel module.
 

@@ -1,5 +1,5 @@
-use sgit::ui;
 use clap::Parser;
+use sgit::ui;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -9,8 +9,10 @@ struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
+    let _args = Args::parse();
     println!("SentinelGit (sgit) v0.1.0");
-    // Placeholder for TUI start
-    // ui::start();
+    // Start the TUI
+    if let Err(e) = ui::dashboard::run() {
+        eprintln!("Error running TUI: {}", e);
+    }
 }

@@ -1,0 +1,23 @@
+# --- Rust Build Artifacts (Lo más importante) ---
+/target/
+
+# --- Ficheros de respaldo de rustfmt ---
+**/*.rs.bk
+
+# --- IDEs y Editores (Opcional pero recomendado) ---
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (RustRover / IntelliJ)
+.idea/
+*.iml
+
+# Vim / Emacs / Otros
+*~
+*.swp
+*.swo
+
+# --- Sistema Operativo ---
+.DS_Store
+Thumbs.db

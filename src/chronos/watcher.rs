@@ -1,7 +1,9 @@
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher, Event};
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher, Event, EventKind};
 use std::path::Path;
 use std::sync::mpsc::channel;
 use std::time::Duration;
+use crate::chronos::storage::ChronosStore;
+use std::fs;
 
 pub fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
     let (tx, rx) = channel();
@@ -13,6 +15,17 @@ pub fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
     // below will be monitored for changes.
     watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
 
+    // Initialize Chronos Store
+    // We'll use a directory inside .git or a separate .sgit folder
+    let db_path = path.as_ref().join(".git/chronos_db");
+    let store = match ChronosStore::open(db_path) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            println!("Failed to open Chronos Store: {}", e);
+            None
+        }
+    };
+
     for res in rx {
         match res {
             Ok(event) => {
@@ -21,9 +34,24 @@ pub fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
                     if path.to_string_lossy().contains(".git") || path.to_string_lossy().contains("target") {
                         continue;
                     }
+                    
+                    // Only act on Modify or Create events
+                    match event.kind {
+                        EventKind::Modify(_) | EventKind::Create(_) => {
+                             println!("Change detected in: {:?}", path);
+                             if let Some(store) = &store {
+                                 if let Ok(content) = fs::read(path) {
+                                     if let Err(e) = store.save_snapshot(&path.to_string_lossy(), &content) {
+                                         println!("Failed to save snapshot: {}", e);
+                                     } else {
+                                         println!("Snapshot saved for {:?}", path);
+                                     }
+                                 }
+                             }
+                        }
+                        _ => {}
+                    }
                 }
-                println!("Change: {:?}", event);
-                // Here we would trigger the snapshot logic
             },
             Err(e) => println!("watch error: {:?}", e),
         }
