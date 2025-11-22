@@ -11,7 +11,14 @@ struct Args {
 fn main() {
     let _args = Args::parse();
     println!("SentinelGit (sgit) v0.1.0");
-    // Start the TUI
+    // 1. Start Chronos Daemon
+    std::thread::spawn(|| {
+        if let Err(e) = sgit::chronos::watcher::watch(".") {
+            eprintln!("Error in Chronos Daemon: {}", e);
+        }
+    });
+
+    // 2. Start the TUI
     if let Err(e) = ui::dashboard::run() {
         eprintln!("Error running TUI: {}", e);
     }

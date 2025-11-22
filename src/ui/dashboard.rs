@@ -57,6 +57,7 @@ struct FileItem {
 }
 
 struct App {
+    repo: Option<GitRepository>,
     files: Vec<FileItem>,
     logs: Vec<String>,
     selected_index: usize,
@@ -76,6 +77,7 @@ impl App {
         let mut impact_score = None;
         let mut smart_prefix = String::new();
         let mut rebase_commits = vec![];
+        let mut repo_opt = None;
 
         // Initialize Git Repository
         match GitRepository::open(".") {
@@ -99,11 +101,14 @@ impl App {
                 impact_score = impact_radar::scan_changes(&repo);
                 smart_prefix = smart_context::suggest_prefix(&repo);
                 rebase_commits = interactive_rebase::load_commits(&repo);
+
+                repo_opt = Some(repo);
             }
             Err(e) => logs.push(format!("Failed to open repository: {}", e)),
         }
 
         App {
+            repo: repo_opt,
             files,
             logs,
             selected_index: 0,
@@ -165,6 +170,25 @@ fn run_app<B: ratatui::backend::Backend>(
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('z') => app.zen_mode.toggle(),
+                    KeyCode::Char(' ') => {
+                        if let Some(repo) = &app.repo {
+                            if let Some(file) = app.files.get_mut(app.selected_index) {
+                                // Sentinel Check
+                                if !file.issues.is_empty() {
+                                    app.logs.push(format!("🚫 BLOCKED: {} has security issues. Fix them before staging.", file.path));
+                                } else {
+                                    // Stage
+                                    if let Err(e) = repo.add(&[&file.path]) {
+                                        app.logs
+                                            .push(format!("Error staging {}: {}", file.path, e));
+                                    } else {
+                                        file.status = "Staged".to_string(); // Visual update
+                                        app.logs.push(format!("✅ Staged: {}", file.path));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     KeyCode::Down => app.next(),
                     KeyCode::Up => app.previous(),
                     _ => {}
