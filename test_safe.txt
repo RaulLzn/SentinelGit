@@ -1,2 +1,0 @@
-Just a normal text file for testing the staging process.
-No secrets here.

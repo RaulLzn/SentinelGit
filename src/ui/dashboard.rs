@@ -175,6 +175,21 @@ impl<'a> App<'a> {
         self.commit_input.insert_str(&self.smart_prefix);
     }
 
+    fn refresh_status(&mut self) {
+        if let Some(repo) = &self.repo {
+            if let Ok(statuses) = repo.status() {
+                self.files.clear();
+                for (path, status) in statuses {
+                    self.files.push(FileItem {
+                        path,
+                        status,
+                        issues: vec![],
+                    });
+                }
+            }
+        }
+    }
+
     fn perform_commit(&mut self) {
         if let Some(repo) = &self.repo {
             let lines = self.commit_input.lines();
@@ -192,8 +207,7 @@ impl<'a> App<'a> {
                             message
                         ));
                         self.show_commit_modal = false;
-                        // Limpiar status visualmente (en una app real recargaríamos el status completo)
-                        self.files.retain(|f| f.status != "Staged");
+                        self.refresh_status(); // Recargar status completo
                     }
                     Err(e) => self.logs.push(format!("❌ Error en commit: {}", e)),
                 }
@@ -245,20 +259,31 @@ fn run_app<B: ratatui::backend::Backend>(
                     key: Key::Char(' '),
                     ..
                 } => {
-                    // STAGE INTELIGENTE
+                    // STAGE/UNSTAGE INTELIGENTE
                     if let Some(repo) = &app.repo {
                         if let Some(file) = app.files.get_mut(app.selected_index) {
-                            if !file.issues.is_empty() {
-                                app.logs.push(format!(
-                                    "🚫 BLOQUEADO: {} tiene riesgos de seguridad.",
-                                    file.path
-                                ));
-                            } else {
-                                if let Err(e) = repo.add(&[&file.path]) {
-                                    app.logs.push(format!("Error: {}", e));
+                            if file.status.contains("Index") || file.status == "Staged" {
+                                // UNSTAGE
+                                if let Err(e) = repo.unstage(&file.path) {
+                                    app.logs.push(format!("Error unstaging: {}", e));
                                 } else {
-                                    file.status = "Staged".to_string();
-                                    app.logs.push(format!("✅ Staged: {}", file.path));
+                                    file.status = "Modified".to_string(); // Visual update (will be refreshed properly on next loop if we wanted, but immediate feedback is good)
+                                    app.logs.push(format!("🔙 Unstaged: {}", file.path));
+                                }
+                            } else {
+                                // STAGE
+                                if !file.issues.is_empty() {
+                                    app.logs.push(format!(
+                                        "🚫 BLOQUEADO: {} tiene riesgos de seguridad.",
+                                        file.path
+                                    ));
+                                } else {
+                                    if let Err(e) = repo.add(&[&file.path]) {
+                                        app.logs.push(format!("Error: {}", e));
+                                    } else {
+                                        file.status = "Staged".to_string();
+                                        app.logs.push(format!("✅ Staged: {}", file.path));
+                                    }
                                 }
                             }
                         }
@@ -301,7 +326,11 @@ fn render_zen_mode(f: &mut ratatui::Frame, app: &mut App) {
         })
         .collect();
     f.render_stateful_widget(
-        List::new(items).block(Block::default().borders(Borders::ALL).title("Zen Mode")),
+        List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Zen Mode (Focus View - Press 'z' to exit)"),
+        ),
         f.size(),
         &mut ratatui::widgets::ListState::default(),
     );

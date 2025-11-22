@@ -38,6 +38,14 @@ impl GitRepository {
         Ok(())
     }
 
+    pub fn unstage(&self, path: &str) -> Result<()> {
+        let head = self.repo.head()?.peel_to_commit()?;
+
+        self.repo
+            .reset_default(Some(head.as_object()), vec![path])?;
+        Ok(())
+    }
+
     pub fn commit(&self, message: &str) -> Result<git2::Oid> {
         let mut index = self.repo.index()?;
         let tree_id = index.write_tree()?;
