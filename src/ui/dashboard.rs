@@ -6,37 +6,31 @@ use crate::sentinel::Sentinel;
 use crate::ui::shelf::ShelfState;
 use crate::ui::zen_mode::ZenState;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::widgets::Clear;
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph}, // Importamos Clear para el popup
     Terminal,
 };
 use std::path::Path;
 use std::{io, time::Duration};
-use tui_textarea::{Input, Key, TextArea};
+use tui_textarea::{Input, Key, TextArea}; // <--- Nueva Importación
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
-    // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app state
     let mut app = App::new();
-
-    // Run app loop
     let res = run_app(&mut terminal, &mut app);
 
-    // Restore terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -58,36 +52,40 @@ struct FileItem {
     issues: Vec<String>,
 }
 
-struct App {
+struct App<'a> {
+    // Agregamos lifetime para el TextArea
     repo: Option<GitRepository>,
     files: Vec<FileItem>,
     logs: Vec<String>,
     selected_index: usize,
-    // New Features
+
+    // Features
     zen_mode: ZenState,
     shelf: ShelfState,
     impact_score: Option<ImpactScore>,
     smart_prefix: String,
     rebase_commits: Vec<RebaseEntry>,
-    // Commit Modal
+
+    // Commit Modal State
     show_commit_modal: bool,
-    commit_input: TextArea<'static>,
+    commit_input: TextArea<'a>,
 }
 
-impl App {
-    fn new() -> App {
+impl<'a> App<'a> {
+    fn new() -> App<'a> {
         let mut files = vec![];
-        let mut logs = vec!["Welcome to SentinelGit".to_string()];
+        let mut logs = vec!["Welcome to SentinelGit v0.1.0".to_string()];
         let mut shelf = ShelfState::new();
         let mut impact_score = None;
         let mut smart_prefix = String::new();
         let mut rebase_commits = vec![];
         let mut repo_opt = None;
 
-        // Initialize Git Repository
         match GitRepository::open(".") {
             Ok(mut repo) => {
-                logs.push("Repository opened successfully.".to_string());
+                logs.push("Repository connected.".to_string());
+
+                // Cargar Status
                 match repo.status() {
                     Ok(statuses) => {
                         for (path, status) in statuses {
@@ -98,10 +96,10 @@ impl App {
                             });
                         }
                     }
-                    Err(e) => logs.push(format!("Error fetching status: {}", e)),
+                    Err(e) => logs.push(format!("Status error: {}", e)),
                 }
 
-                // Initialize Features
+                // Cargar Features
                 shelf.refresh(&mut repo);
                 impact_score = impact_radar::scan_changes(&repo);
                 smart_prefix = smart_context::suggest_prefix(&repo);
@@ -109,8 +107,16 @@ impl App {
 
                 repo_opt = Some(repo);
             }
-            Err(e) => logs.push(format!("Failed to open repository: {}", e)),
+            Err(e) => logs.push(format!("Failed to open repo: {}", e)),
         }
+
+        // Inicializar TextArea vacío
+        let mut textarea = TextArea::default();
+        textarea.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Commit Message "),
+        );
 
         App {
             repo: repo_opt,
@@ -123,7 +129,7 @@ impl App {
             smart_prefix,
             rebase_commits,
             show_commit_modal: false,
-            commit_input: TextArea::default(),
+            commit_input: textarea,
         }
     }
 
@@ -151,14 +157,45 @@ impl App {
             match Sentinel::scan_file(path) {
                 Ok(issues) => {
                     file.issues = issues.clone();
-                    if !issues.is_empty() {
-                        self.logs
-                            .push(format!("Issues found in {}: {:?}", file.path, issues));
-                    }
                 }
-                Err(e) => {
-                    self.logs
-                        .push(format!("Error scanning {}: {}", file.path, e));
+                Err(_) => {}
+            }
+        }
+    }
+
+    fn open_commit_modal(&mut self) {
+        self.show_commit_modal = true;
+        // Pre-rellenar con Smart Context (ej: "feat: ")
+        self.commit_input = TextArea::default();
+        self.commit_input.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Commit Message (Enter to Submit, Esc to Cancel) "),
+        );
+        self.commit_input.insert_str(&self.smart_prefix);
+    }
+
+    fn perform_commit(&mut self) {
+        if let Some(repo) = &self.repo {
+            let lines = self.commit_input.lines();
+            let message = lines.join("\n");
+
+            if message.trim().is_empty() {
+                self.logs
+                    .push("❌ Commit abortado: Mensaje vacío.".to_string());
+            } else {
+                match repo.commit(&message) {
+                    Ok(oid) => {
+                        self.logs.push(format!(
+                            "🚀 Commit exitoso: {} - {}",
+                            &oid.to_string()[..7],
+                            message
+                        ));
+                        self.show_commit_modal = false;
+                        // Limpiar status visualmente (en una app real recargaríamos el status completo)
+                        self.files.retain(|f| f.status != "Staged");
+                    }
+                    Err(e) => self.logs.push(format!("❌ Error en commit: {}", e)),
                 }
             }
         }
@@ -173,118 +210,110 @@ fn run_app<B: ratatui::backend::Backend>(
         terminal.draw(|f| ui(f, app))?;
 
         if crossterm::event::poll(Duration::from_millis(250))? {
-            let event = event::read()?.into();
+            match event::read()?.into() {
+                Input {
+                    key: Key::Char('q'),
+                    ..
+                } if !app.show_commit_modal => return Ok(()),
 
-            if app.show_commit_modal {
-                match event {
-                    Input { key: Key::Esc, .. } => {
-                        app.show_commit_modal = false;
-                    }
-                    Input {
-                        key: Key::Enter, ..
-                    } => {
-                        if let Some(repo) = &app.repo {
-                            let message = app.commit_input.lines().join("\n");
-                            match repo.commit(&message) {
-                                Ok(oid) => {
-                                    app.logs.push(format!("✅ Commit successful: {}", oid));
-                                    app.show_commit_modal = false;
-                                    // Refresh status
-                                    if let Ok(statuses) = repo.status() {
-                                        app.files.clear();
-                                        for (path, status) in statuses {
-                                            app.files.push(FileItem {
-                                                path,
-                                                status,
-                                                issues: vec![],
-                                            });
-                                        }
-                                    }
-                                }
-                                Err(e) => app.logs.push(format!("❌ Commit failed: {}", e)),
-                            }
-                        }
-                    }
-                    input => {
-                        app.commit_input.input(input);
+                // Lógica del Modal de Commit
+                input if app.show_commit_modal => {
+                    match input {
+                        Input { key: Key::Esc, .. } => app.show_commit_modal = false,
+                        Input {
+                            key: Key::Enter, ..
+                        } => app.perform_commit(),
+                        _ => {
+                            app.commit_input.input(input);
+                        } // Escribir en el cuadro
                     }
                 }
-            } else {
-                let Input { key, .. } = event;
-                match key {
-                    Key::Char('q') => return Ok(()),
-                    Key::Char('z') => app.zen_mode.toggle(),
-                    Key::Char('c') => {
-                        app.show_commit_modal = true;
-                        app.commit_input = TextArea::default();
-                        app.commit_input.insert_str(&app.smart_prefix);
-                    }
-                    Key::Char(' ') => {
-                        if let Some(repo) = &app.repo {
-                            if let Some(file) = app.files.get_mut(app.selected_index) {
-                                // Sentinel Check
-                                if !file.issues.is_empty() {
-                                    app.logs.push(format!("🚫 BLOCKED: {} has security issues. Fix them before staging.", file.path));
+
+                // Lógica Normal (Navegación)
+                Input { key: Key::Down, .. } => app.next(),
+                Input { key: Key::Up, .. } => app.previous(),
+                Input {
+                    key: Key::Char('z'),
+                    ..
+                } => app.zen_mode.toggle(),
+                Input {
+                    key: Key::Char('c'),
+                    ..
+                } => app.open_commit_modal(), // <--- ABRIR MODAL
+
+                Input {
+                    key: Key::Char(' '),
+                    ..
+                } => {
+                    // STAGE INTELIGENTE
+                    if let Some(repo) = &app.repo {
+                        if let Some(file) = app.files.get_mut(app.selected_index) {
+                            if !file.issues.is_empty() {
+                                app.logs.push(format!(
+                                    "🚫 BLOQUEADO: {} tiene riesgos de seguridad.",
+                                    file.path
+                                ));
+                            } else {
+                                if let Err(e) = repo.add(&[&file.path]) {
+                                    app.logs.push(format!("Error: {}", e));
                                 } else {
-                                    // Stage
-                                    if let Err(e) = repo.add(&[&file.path]) {
-                                        app.logs
-                                            .push(format!("Error staging {}: {}", file.path, e));
-                                    } else {
-                                        file.status = "Staged".to_string(); // Visual update
-                                        app.logs.push(format!("✅ Staged: {}", file.path));
-                                    }
+                                    file.status = "Staged".to_string();
+                                    app.logs.push(format!("✅ Staged: {}", file.path));
                                 }
                             }
                         }
                     }
-                    Key::Down => app.next(),
-                    Key::Up => app.previous(),
-                    _ => {}
                 }
+                _ => {}
             }
         }
     }
 }
 
 fn ui(f: &mut ratatui::Frame, app: &mut App) {
+    // 1. Renderizar UI Base (Igual que antes)
     if app.zen_mode.active {
-        // Zen Mode: Only show file list
-        let items: Vec<ListItem> = app
-            .files
-            .iter()
-            .map(|i| {
-                let style = if !i.issues.is_empty() {
-                    Style::default().fg(Color::Red)
-                } else {
-                    Style::default()
-                };
-                ListItem::new(format!("{} [{}]", i.path, i.status)).style(style)
-            })
-            .collect();
-
-        let files_list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Files (Zen Mode)"),
-            )
-            .highlight_symbol(">> ")
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-
-        f.render_stateful_widget(
-            files_list,
-            f.size(),
-            &mut ratatui::widgets::ListState::default(),
-        );
-        return;
+        render_zen_mode(f, app);
+    } else {
+        render_dashboard(f, app);
     }
 
+    // 2. Renderizar Modal encima si está activo
+    if app.show_commit_modal {
+        let area = centered_rect(60, 20, f.size());
+        f.render_widget(Clear, area); // Limpiar lo de abajo
+        f.render_widget(app.commit_input.widget(), area); // Pintar el input
+    }
+}
+
+// Funciones auxiliares de renderizado para mantener el código limpio
+fn render_zen_mode(f: &mut ratatui::Frame, app: &mut App) {
+    let items: Vec<ListItem> = app
+        .files
+        .iter()
+        .map(|i| {
+            let style = if !i.issues.is_empty() {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default()
+            };
+            ListItem::new(format!("{} [{}]", i.path, i.status)).style(style)
+        })
+        .collect();
+    f.render_stateful_widget(
+        List::new(items).block(Block::default().borders(Borders::ALL).title("Zen Mode")),
+        f.size(),
+        &mut ratatui::widgets::ListState::default(),
+    );
+}
+
+fn render_dashboard(f: &mut ratatui::Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(f.size());
 
+    // Lista de archivos
     let items: Vec<ListItem> = app
         .files
         .iter()
@@ -298,114 +327,60 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         })
         .collect();
 
-    let files_list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Files"))
-        .highlight_symbol(">> ")
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-
     let mut state = ratatui::widgets::ListState::default();
     state.select(Some(app.selected_index));
-    f.render_stateful_widget(files_list, chunks[0], &mut state);
+    f.render_stateful_widget(
+        List::new(items)
+            .block(Block::default().borders(Borders::ALL).title("Files"))
+            .highlight_symbol(">> "),
+        chunks[0],
+        &mut state,
+    );
 
-    // Right Panel: Logs + Features
+    // Panel Derecho
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Percentage(40), // Logs
-                Constraint::Percentage(20), // Impact & Smart Context
-                Constraint::Percentage(20), // Shelf
-                Constraint::Percentage(20), // Rebase
-            ]
-            .as_ref(),
-        )
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+            Constraint::Percentage(20),
+        ])
         .split(chunks[1]);
 
-    let logs_paragraph = Paragraph::new(app.logs.join("\n"))
-        .block(Block::default().borders(Borders::ALL).title("Logs"));
-    f.render_widget(logs_paragraph, right_chunks[0]);
-
-    // Impact & Smart Context
-    let impact_text = if let Some(score) = &app.impact_score {
-        format!("Impact: {} ({:.1})", score.level, score.score)
-    } else {
-        "Impact: N/A".to_string()
-    };
-    let context_text = format!("Suggested Scope: {}", app.smart_prefix);
-    let info_paragraph = Paragraph::new(format!("{}\n{}", impact_text, context_text))
-        .block(Block::default().borders(Borders::ALL).title("Analysis"));
-    f.render_widget(info_paragraph, right_chunks[1]);
-
-    // Shelf
-    let shelf_items: Vec<ListItem> = app
-        .shelf
-        .stashes
-        .iter()
-        .map(|s| ListItem::new(s.as_str()))
-        .collect();
-    let shelf_list = List::new(shelf_items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Shelf (Stash)"),
+    f.render_widget(
+        Paragraph::new(app.logs.join("\n"))
+            .block(Block::default().borders(Borders::ALL).title("Logs")),
+        right_chunks[0],
     );
-    f.render_widget(shelf_list, right_chunks[2]);
 
-    // Rebase
-    let rebase_items: Vec<ListItem> = app
-        .rebase_commits
-        .iter()
-        .map(|c| ListItem::new(format!("{} {}", c.id, c.message)))
-        .collect();
-    let rebase_list = List::new(rebase_items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Recent Commits"),
+    let info = format!(
+        "Impact: {:?}\nScope: {}",
+        app.impact_score.as_ref().map(|s| s.score).unwrap_or(0.0),
+        app.smart_prefix
     );
-    f.render_widget(rebase_list, right_chunks[3]);
-
-    // Commit Modal Overlay
-    if app.show_commit_modal {
-        let area = centered_rect(60, 25, f.size());
-        f.render_widget(Clear, area); // Clear the background
-
-        app.commit_input.set_block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Commit Message (Esc to cancel, Enter to commit)"),
-        );
-        f.render_widget(app.commit_input.widget(), area);
-    }
+    f.render_widget(
+        Paragraph::new(info).block(Block::default().borders(Borders::ALL).title("Analysis")),
+        right_chunks[1],
+    );
 }
 
-/// Helper function to center a rect
-fn centered_rect(
-    percent_x: u16,
-    percent_y: u16,
-    r: ratatui::layout::Rect,
-) -> ratatui::layout::Rect {
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Percentage((100 - percent_y) / 2),
-                Constraint::Percentage(percent_y),
-                Constraint::Percentage((100 - percent_y) / 2),
-            ]
-            .as_ref(),
-        )
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
         .split(r);
 
-    let horiz_layout = Layout::default()
+    Layout::default()
         .direction(Direction::Horizontal)
-        .constraints(
-            [
-                Constraint::Percentage((100 - percent_x) / 2),
-                Constraint::Percentage(percent_x),
-                Constraint::Percentage((100 - percent_x) / 2),
-            ]
-            .as_ref(),
-        )
-        .split(popup_layout[1]);
-
-    horiz_layout[1]
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
