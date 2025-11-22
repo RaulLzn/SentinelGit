@@ -363,6 +363,30 @@ fn render_dashboard(f: &mut ratatui::Frame, app: &mut App) {
         Paragraph::new(info).block(Block::default().borders(Borders::ALL).title("Analysis")),
         right_chunks[1],
     );
+
+    // Shelf
+    let shelf_items: Vec<ListItem> = app
+        .shelf
+        .stashes
+        .iter()
+        .map(|s| ListItem::new(s.as_str()))
+        .collect();
+    let shelf_list =
+        List::new(shelf_items).block(Block::default().borders(Borders::ALL).title("Shelf"));
+    f.render_widget(shelf_list, right_chunks[2]);
+
+    // Rebase
+    let rebase_items: Vec<ListItem> = app
+        .rebase_commits
+        .iter()
+        .map(|c| ListItem::new(format!("{} {}", c.id, c.message)))
+        .collect();
+    let rebase_list = List::new(rebase_items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Recent Commits"),
+    );
+    f.render_widget(rebase_list, right_chunks[3]);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
