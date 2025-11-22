@@ -1,5 +1,5 @@
 use anyhow::Result;
-use git2::{Repository, Status, StatusOptions};
+use git2::{Repository, StatusOptions};
 use std::path::Path;
 
 pub struct GitRepository {

@@ -6,10 +6,11 @@ use crate::sentinel::Sentinel;
 use crate::ui::shelf::ShelfState;
 use crate::ui::zen_mode::ZenState;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::widgets::Clear;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -19,6 +20,7 @@ use ratatui::{
 };
 use std::path::Path;
 use std::{io, time::Duration};
+use tui_textarea::{Input, Key, TextArea};
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Setup terminal
@@ -67,6 +69,9 @@ struct App {
     impact_score: Option<ImpactScore>,
     smart_prefix: String,
     rebase_commits: Vec<RebaseEntry>,
+    // Commit Modal
+    show_commit_modal: bool,
+    commit_input: TextArea<'static>,
 }
 
 impl App {
@@ -117,6 +122,8 @@ impl App {
             impact_score,
             smart_prefix,
             rebase_commits,
+            show_commit_modal: false,
+            commit_input: TextArea::default(),
         }
     }
 
@@ -166,11 +173,53 @@ fn run_app<B: ratatui::backend::Backend>(
         terminal.draw(|f| ui(f, app))?;
 
         if crossterm::event::poll(Duration::from_millis(250))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Char('z') => app.zen_mode.toggle(),
-                    KeyCode::Char(' ') => {
+            let event = event::read()?.into();
+
+            if app.show_commit_modal {
+                match event {
+                    Input { key: Key::Esc, .. } => {
+                        app.show_commit_modal = false;
+                    }
+                    Input {
+                        key: Key::Enter, ..
+                    } => {
+                        if let Some(repo) = &app.repo {
+                            let message = app.commit_input.lines().join("\n");
+                            match repo.commit(&message) {
+                                Ok(oid) => {
+                                    app.logs.push(format!("✅ Commit successful: {}", oid));
+                                    app.show_commit_modal = false;
+                                    // Refresh status
+                                    if let Ok(statuses) = repo.status() {
+                                        app.files.clear();
+                                        for (path, status) in statuses {
+                                            app.files.push(FileItem {
+                                                path,
+                                                status,
+                                                issues: vec![],
+                                            });
+                                        }
+                                    }
+                                }
+                                Err(e) => app.logs.push(format!("❌ Commit failed: {}", e)),
+                            }
+                        }
+                    }
+                    input => {
+                        app.commit_input.input(input);
+                    }
+                }
+            } else {
+                let Input { key, .. } = event;
+                match key {
+                    Key::Char('q') => return Ok(()),
+                    Key::Char('z') => app.zen_mode.toggle(),
+                    Key::Char('c') => {
+                        app.show_commit_modal = true;
+                        app.commit_input = TextArea::default();
+                        app.commit_input.insert_str(&app.smart_prefix);
+                    }
+                    Key::Char(' ') => {
                         if let Some(repo) = &app.repo {
                             if let Some(file) = app.files.get_mut(app.selected_index) {
                                 // Sentinel Check
@@ -189,8 +238,8 @@ fn run_app<B: ratatui::backend::Backend>(
                             }
                         }
                     }
-                    KeyCode::Down => app.next(),
-                    KeyCode::Up => app.previous(),
+                    Key::Down => app.next(),
+                    Key::Up => app.previous(),
                     _ => {}
                 }
             }
@@ -313,4 +362,50 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             .title("Recent Commits"),
     );
     f.render_widget(rebase_list, right_chunks[3]);
+
+    // Commit Modal Overlay
+    if app.show_commit_modal {
+        let area = centered_rect(60, 25, f.size());
+        f.render_widget(Clear, area); // Clear the background
+
+        app.commit_input.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Commit Message (Esc to cancel, Enter to commit)"),
+        );
+        f.render_widget(app.commit_input.widget(), area);
+    }
+}
+
+/// Helper function to center a rect
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    r: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_y) / 2),
+                Constraint::Percentage(percent_y),
+                Constraint::Percentage((100 - percent_y) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(r);
+
+    let horiz_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            [
+                Constraint::Percentage((100 - percent_x) / 2),
+                Constraint::Percentage(percent_x),
+                Constraint::Percentage((100 - percent_x) / 2),
+            ]
+            .as_ref(),
+        )
+        .split(popup_layout[1]);
+
+    horiz_layout[1]
 }
