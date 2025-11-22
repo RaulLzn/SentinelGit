@@ -6,14 +6,14 @@ use crate::sentinel::Sentinel;
 use crate::ui::shelf::ShelfState;
 use crate::ui::zen_mode::ZenState;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph}, // Importamos Clear para el popup
     Terminal,
 };
