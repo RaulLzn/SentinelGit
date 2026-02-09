@@ -1,6 +1,8 @@
 use anyhow::Result;
 use git2::{Repository, StatusOptions};
+use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 pub struct GitRepository {
     repo: Repository,
@@ -107,5 +109,53 @@ impl GitRepository {
             commits.push((short_id, message));
         }
         Ok(commits)
+    }
+    pub fn get_file_content_at_head(&self, path: &str) -> Result<Option<String>> {
+        let head = match self.repo.head() {
+            Ok(h) => h,
+            Err(_) => return Ok(None), // No HEAD or error retrieving it
+        };
+
+        let tree = head.peel_to_tree()?;
+
+        match tree.get_path(Path::new(path)) {
+            Ok(entry) => {
+                let object = entry.to_object(&self.repo)?;
+                if let Some(blob) = object.as_blob() {
+                    if let Ok(content) = std::str::from_utf8(blob.content()) {
+                        return Ok(Some(content.to_string()));
+                    }
+                }
+            }
+            Err(_) => return Ok(None), // Path not found in HEAD
+        }
+        Ok(None)
+    }
+
+    pub fn apply_patch(&self, patch: &str) -> Result<()> {
+        let mut child = Command::new("git")
+            .arg("apply")
+            .arg("--cached")
+            .arg("--unidiff-zero") // Important for hand-crafted patches without perfect context
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .current_dir(self.repo.workdir().unwrap_or(Path::new(".")))
+            .spawn()?;
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin.write_all(patch.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Git apply failed: {}", stderr));
+        }
+
+        Ok(())
     }
 }

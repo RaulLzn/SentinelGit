@@ -1,61 +1,100 @@
-# SentinelGit
+# SentinelGit 🛡️
 
 SentinelGit is a high-performance, terminal-based Git client designed to elevate the development workflow through proactive security, granular history management, and intelligent context awareness. Unlike traditional Git clients that act merely as wrappers around Git commands, SentinelGit actively guards your codebase and enhances your decision-making process.
 
-## Philosophy
+![SentinelGit Screenshot](https://via.placeholder.com/800x400?text=SentinelGit+Dashboard)
 
-In modern software development, the cost of errors is high. Leaked secrets, accidental binary commits, and vague commit messages are common pitfalls that disrupt workflows and compromise security. SentinelGit addresses these issues by shifting validation left—catching problems before they are staged, not after they are pushed. It is built on the belief that your tools should be active partners in your development process, not just passive utilities.
+## 🚀 Key Features
 
-## Key Features
-
-### The Guardian (Sentinel)
+### 🛡️ The Guardian (Sentinel)
 
 SentinelGit integrates a real-time security engine that scans files before they enter your staging area.
 
-- **Secret Detection**: Automatically identifies and blocks potential secrets, such as AWS keys, private keys, and high-entropy strings, preventing accidental leaks.
-- **Binary Blocker**: Prevents the accidental staging of binary files, keeping your repository clean and performant.
-- **Proactive Defense**: Staging is blocked at the source if a threat is detected, enforcing security best practices by default.
+- **Secret Detection**: Automatically identifies and blocks potential secrets (AWS keys, private keys, etc.).
+- **Binary Blocker**: Prevents accidental staging of binary files.
+- **Proactive Defense**: Staging is blocked at the source if a threat is detected.
 
-### The Time Machine (Chronos)
+### ⏳ The Time Machine (Chronos) & Ghost Branches
 
 Chronos provides a safety net beyond standard Git commits.
 
 - **Background Watcher**: A lightweight daemon monitors your workspace for changes in real-time.
-- **Granular Snapshots**: Every modification is automatically compressed and saved to a local database. This allows you to recover work even if it was never committed or staged, effectively giving you an undo button for your entire project history.
+- **Ghost Branches**: Every modification is automatically compressed and saved.
+- **Time Travel**: Press `t` to open the Time Machine modal and restore your entire project to any previous state, even if you never committed it.
+- **File History**: Press `h` to see the revision history of a specific file and restore it individually.
 
-### Impact Radar
+### 📝 Smart Commit Wizard
 
-Understanding the scope of your changes is crucial for code review and stability.
+SentinelGit enforces and simplifies Conventional Commits.
 
-- **Cognitive Load Analysis**: The Impact Radar analyzes your changes to calculate an impact score, giving you immediate feedback on the complexity and risk associated with your current work.
-- **Risk Assessment**: Helps you decide whether a change is too large and should be broken down, promoting better code hygiene.
+- **Interactive Wizard**: Press `c` to open a multi-step wizard that guides you through type, scope, summary, and description.
+- **Automated Formatting**: Generates standardized commit messages (e.g., `feat(ui): add new button`).
 
-### Smart Context
+### 🔍 Interactive Staging (Diff Viewer)
 
-SentinelGit reduces the friction of adhering to Conventional Commits.
+Review and stage changes with precision.
 
-- **Intelligent Scoping**: The system analyzes the modified files to suggest appropriate commit scopes (e.g., `feat(ui)`, `fix(core)`).
-- **Automated Prefixes**: When opening the commit modal, the message field is pre-filled with the suggested context, streamlining the commit process and ensuring consistency in your project history.
+- **Hunk Selection**: Press `d` to view a file's diff. Use `Up`/`Down` to navigate individual changes (hunks).
+- **Partial Staging**: Press `s` to stage only the selected hunk, allowing for atomic commits.
+- **Syntax Highlighting**: clear, color-coded diffs.
 
-### Zen Mode
+### 🧘 Zen Mode & Impact Radar
 
-Designed for flow, Zen Mode removes all distractions from the interface, leaving only the essential file list and status indicators. This allows you to focus entirely on the task at hand without visual clutter.
+- **Zen Mode**: Press `z` to remove all distractions and focus on your code.
+- **Impact Score**: Calculates the cognitive load and risk of your changes.
 
-## Usage
+## ⌨️ Usage
 
-SentinelGit is designed to be intuitive for users familiar with terminal interfaces.
+| Key       | Action                                              |
+| :-------- | :-------------------------------------------------- |
+| `↑` / `↓` | Navigate file list                                  |
+| `Space`   | Stage/Unstage file (triggers Sentinel checks)       |
+| `d`       | **Diff View**: Interactive staging (Hunk selection) |
+| `c`       | **Commit**: Open Conventional Commits Wizard        |
+| `h`       | **History**: View/Restore file snapshots            |
+| `t`       | **Time Machine**: Restore project to previous state |
+| `z`       | Toggle Zen Mode                                     |
+| `?`       | Show Help / Keyboard Shortcuts                      |
+| `q`       | Quit                                                |
+| `Esc`     | Close Modal / Cancel                                |
 
-- **Navigation**: Use Up/Down arrows to traverse your file list.
-- **Stage/Unstage**: Press Space to toggle the staged status of a file. Sentinel will perform security checks immediately.
-- **Commit**: Press 'c' to open the commit modal. Enter your message and press Enter to confirm, or Esc to cancel.
-- **Zen Mode**: Press 'z' to toggle the distraction-free view.
-- **Quit**: Press 'q' to exit the application.
+## 📦 Installation
 
-## Installation
+Ensure you have **Rust** and **Cargo** installed.
 
-Ensure you have Rust and Cargo installed on your system.
+### 1. Automated Install (Recommended)
+
+Run the installation script to build and install `sg` to your local bin directory:
+
+```bash
+./install.sh
+```
+
+Restart your terminal, then run:
+
+```bash
+sg
+```
+
+### 2. Manual Build
 
 ```bash
 cargo build --release
-./target/release/sgit
+./target/release/sentinel-git
 ```
+
+## 🔧 Configuration
+
+SentinelGit uses a `.sgit.toml` file for configuration. You can customize:
+
+- **Sentinel Rules**: Define custom regex patterns for secrets.
+- **Ignored Files**: Manage binary extensions to block.
+- **Chronos Settings**: Adjust snapshot frequency and retention.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [CONTRIBUTING.md](CONTRIBUTING.md) (coming soon) for details on our code of conduct, and the process for submitting pull requests.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

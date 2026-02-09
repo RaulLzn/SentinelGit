@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::mpsc::channel;
 
-pub fn watch<P: AsRef<Path>>(path: P, config: &Config) -> notify::Result<()> {
+pub fn watch<P: AsRef<Path>>(path: P, config: &Config, store: ChronosStore) -> notify::Result<()> {
     if !config.chronos.enabled {
         println!("Chronos watcher is disabled in config.");
         return Ok(());
@@ -18,17 +18,6 @@ pub fn watch<P: AsRef<Path>>(path: P, config: &Config) -> notify::Result<()> {
     // Add a path to be watched. All files and directories at that path and
     // below will be monitored for changes.
     watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
-
-    // Initialize Chronos Store
-    // We'll use a directory inside .git or a separate .sgit folder
-    let db_path = path.as_ref().join(".git/chronos_db");
-    let store = match ChronosStore::open(db_path) {
-        Ok(s) => Some(s),
-        Err(e) => {
-            println!("Failed to open Chronos Store: {}", e);
-            None
-        }
-    };
 
     for res in rx {
         match res {
@@ -45,15 +34,13 @@ pub fn watch<P: AsRef<Path>>(path: P, config: &Config) -> notify::Result<()> {
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) => {
                             println!("Change detected in: {:?}", path);
-                            if let Some(store) = &store {
-                                if let Ok(content) = fs::read(path) {
-                                    if let Err(e) =
-                                        store.save_snapshot(&path.to_string_lossy(), &content)
-                                    {
-                                        println!("Failed to save snapshot: {}", e);
-                                    } else {
-                                        println!("Snapshot saved for {:?}", path);
-                                    }
+                            if let Ok(content) = fs::read(path) {
+                                if let Err(e) =
+                                    store.save_snapshot(&path.to_string_lossy(), &content)
+                                {
+                                    println!("Failed to save snapshot: {}", e);
+                                } else {
+                                    println!("Snapshot saved for {:?}", path);
                                 }
                             }
                         }
