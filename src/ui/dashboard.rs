@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::core::GitRepository;
 use crate::features::impact_radar::{self, ImpactScore};
 use crate::features::interactive_rebase::{self, RebaseEntry};
@@ -59,6 +60,11 @@ struct App<'a> {
     logs: Vec<String>,
     selected_index: usize,
 
+    // Core components
+    sentinel: Sentinel,
+    #[allow(dead_code)] // Keep config for future use if needed
+    config: Config,
+
     // Features
     zen_mode: ZenState,
     shelf: ShelfState,
@@ -80,6 +86,12 @@ impl<'a> App<'a> {
         let mut smart_prefix = String::new();
         let mut rebase_commits = vec![];
         let mut repo_opt = None;
+
+        let config = Config::load().unwrap_or_else(|e| {
+            logs.push(format!("Config load error: {}, using defaults", e));
+            Config::default()
+        });
+        let sentinel = Sentinel::new(&config);
 
         match GitRepository::open(".") {
             Ok(mut repo) => {
@@ -123,6 +135,8 @@ impl<'a> App<'a> {
             files,
             logs,
             selected_index: 0,
+            sentinel,
+            config,
             zen_mode: ZenState::new(),
             shelf,
             impact_score,
@@ -154,7 +168,7 @@ impl<'a> App<'a> {
     fn scan_selected(&mut self) {
         if let Some(file) = self.files.get_mut(self.selected_index) {
             let path = Path::new(&file.path);
-            match Sentinel::scan_file(path) {
+            match self.sentinel.scan_file(path) {
                 Ok(issues) => {
                     file.issues = issues.clone();
                 }

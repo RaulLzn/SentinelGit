@@ -1,0 +1,6 @@
+[sentinel]
+secret_patterns = ["password", "secret_key"]
+binary_extensions = ["exe", "dll", "so", "bin", "custom_bin"]
+
+[chronos]
+enabled = false

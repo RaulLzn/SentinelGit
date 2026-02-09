@@ -1,14 +1,19 @@
 use crate::chronos::storage::ChronosStore;
-use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use crate::config::Config; // Import Config
+use notify::{Config as NotifyConfig, EventKind, RecommendedWatcher, RecursiveMode, Watcher}; // Rename notify::Config
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc::channel;
 
-pub fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
+pub fn watch<P: AsRef<Path>>(path: P, config: &Config) -> notify::Result<()> {
+    if !config.chronos.enabled {
+        println!("Chronos watcher is disabled in config.");
+        return Ok(());
+    }
     let (tx, rx) = channel();
 
     // Automatically select the best implementation for your platform.
-    let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
+    let mut watcher = RecommendedWatcher::new(tx, NotifyConfig::default())?;
 
     // Add a path to be watched. All files and directories at that path and
     // below will be monitored for changes.

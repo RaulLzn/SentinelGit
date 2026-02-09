@@ -11,9 +11,16 @@ struct Args {
 fn main() {
     let _args = Args::parse();
     println!("SentinelGit (sgit) v0.1.0");
+
+    let config = sgit::config::Config::load().unwrap_or_else(|e| {
+        eprintln!("Failed to load config: {}, using defaults", e);
+        sgit::config::Config::default()
+    });
+
     // 1. Start Chronos Daemon
-    std::thread::spawn(|| {
-        if let Err(e) = sgit::chronos::watcher::watch(".") {
+    let config_clone = config.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = sgit::chronos::watcher::watch(".", &config_clone) {
             eprintln!("Error in Chronos Daemon: {}", e);
         }
     });
